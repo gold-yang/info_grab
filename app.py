@@ -135,12 +135,13 @@ def collect_data() -> Dict:
 
     fx = fx_block()
     btc = btc_block()
-    rates = yahoo(["^IRX", "^TNX", "^TYX"])
+    rates = yahoo(["^IRX", "^FVX", "^TNX", "^TYX"])
 
     # 重要信息固定显示（即使源暂时失败，也显示上次值）
     usd_cny = next((x for x in fx if x["symbol"] == "USD/CNY"), {})
     btc_usd = btc[0] if btc else {}
     us10y = next((x for x in rates if x.get("symbol") == "^TNX"), {})
+    us2y = next((x for x in rates if x.get("symbol") == "^FVX"), {})
 
     important = [
         {
@@ -163,6 +164,13 @@ def collect_data() -> Dict:
             "value": remember("^TNX", us10y.get("value"), "Yahoo Finance")["value"],
             "source": "Yahoo Finance",
             "stale": remember("^TNX", us10y.get("value"), "Yahoo Finance")["stale"],
+        },
+        {
+            "label": "US 2Y Yield",
+            "symbol": "^FVX",
+            "value": remember("^FVX", us2y.get("value"), "Yahoo Finance")["value"],
+            "source": "Yahoo Finance",
+            "stale": remember("^FVX", us2y.get("value"), "Yahoo Finance")["stale"],
         },
     ]
 
@@ -208,13 +216,14 @@ HTML_PAGE = """<!doctype html><html lang='zh-CN'><head><meta charset='UTF-8'/><m
 body{margin:0;font-family:Inter,Arial,"PingFang SC";background:#0b1220;color:#e7eeff}.wrap{max-width:1300px;margin:0 auto;padding:16px}
 .card{background:#121d34;border:1px solid #ffffff22;border-radius:10px;padding:10px;margin-bottom:10px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
 .table{width:100%;font-size:12px;border-collapse:collapse}.table th,.table td{padding:4px;border-bottom:1px solid #ffffff18;text-align:left}
 .item{padding:6px 0;border-bottom:1px solid #ffffff18}.item a{color:#cde1ff;text-decoration:none}.muted{color:#9cb0da;font-size:12px}
 .big{font-size:24px;font-weight:700}.stale{color:#ffbe70}
-@media(max-width:1100px){.grid3{grid-template-columns:1fr}.grid2{grid-template-columns:1fr}}
+@media(max-width:1100px){.grid3{grid-template-columns:1fr}.grid4{grid-template-columns:1fr 1fr}.grid2{grid-template-columns:1fr}}
 </style></head><body><div class='wrap'>
 <div class='card'><h2 style='margin:0'>实时金融监测看板</h2><div class='muted' id='meta'></div></div>
-<div class='grid3' id='important'></div>
+<div class='grid4' id='important' style='position:sticky;top:8px;z-index:5'></div>
 <div class='card'><h3>市场快照</h3><table class='table' id='snapshot'></table></div>
 <div class='grid3' id='board'></div>
 <div class='grid2'>
@@ -240,8 +249,13 @@ function render(payload){
   document.getElementById('events').innerHTML = (payload.events||[]).map(e=>`<div class='item'><a target='_blank' href='${e.link}'>${e.title}</a><div class='muted'>${e.time} · ${e.source} · ${e.tag}</div></div>`).join('') || '<div class="muted">暂无</div>';
   document.getElementById('cities').innerHTML = t(['city','news_count','top_news'], (payload.cities||[]).map(x=>[x.city,x.count,x.top]));
 }
-const es = new EventSource('/stream');
-es.onmessage = (e)=>{try{render(JSON.parse(e.data))}catch(_){}};
+let es = null;
+function connect(){
+  es = new EventSource('/stream');
+  es.onmessage = (e)=>{try{render(JSON.parse(e.data))}catch(_){}};
+  es.onerror = ()=>{try{es.close()}catch(_){}; setTimeout(connect, 3000);};
+}
+connect();
 </script></body></html>"""
 
 
@@ -361,7 +375,7 @@ def broadcaster() -> None:
                     q.put_nowait(payload)
                 except Exception:
                     SUBSCRIBERS.remove(q)
-        time.sleep(15)
+        time.sleep(5)
 
 
 if __name__ == "__main__":
