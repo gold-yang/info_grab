@@ -23,3 +23,15 @@ python3 app.py
 ```
 
 浏览器打开：`http://127.0.0.1:8000`
+
+
+## 兼容接口（用于旧前端，避免404）
+
+虽然当前页面主流程仅依赖 `/stream`，但服务仍提供只读兼容接口：
+
+- `GET /api/meta`
+- `GET /api/snapshot`
+- `GET /api/panel?tab=FX|Rates|Crypto|Equities|FixedIncome|Commodities`
+- `GET /api/events`
+- `GET /api/macro_calendar`
+- `GET /api/city_financing`

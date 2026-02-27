@@ -9,7 +9,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from queue import Empty, Queue
 from typing import Dict, List, Tuple
-from urllib.parse import quote_plus, urlparse
+from urllib.parse import parse_qs, quote_plus, urlparse
 from urllib.request import Request, urlopen
 
 HOST = "0.0.0.0"
@@ -252,6 +252,70 @@ class Handler(BaseHTTPRequestHandler):
             body = HTML_PAGE.encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
+        # 兼容旧版前端请求，避免 /api/* 404 噪音
+        if p.path == "/api/meta":
+            payload = collect_data()
+            body = json.dumps({"ts": payload["ts"], "note": payload["note"]}, ensure_ascii=False).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
+        if p.path == "/api/snapshot":
+            payload = collect_data()
+            body = json.dumps(payload["snapshot"], ensure_ascii=False).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
+        if p.path == "/api/panel":
+            tab = (parse_qs(p.query).get("tab", ["FX"])[0] or "FX").strip()
+            payload = collect_data()
+            mapping = {"FX": "汇率", "Rates": "利率", "Crypto": "BTC", "Equities": "美股", "FixedIncome": "美债", "Commodities": "贵金属"}
+            rows = payload["board"].get(mapping.get(tab, "汇率"), [])
+            body = json.dumps(rows, ensure_ascii=False).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
+        if p.path == "/api/events":
+            payload = collect_data()
+            body = json.dumps(payload["events"], ensure_ascii=False).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
+        if p.path == "/api/macro_calendar":
+            body = json.dumps([], ensure_ascii=False).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
+        if p.path == "/api/city_financing":
+            payload = collect_data()
+            rows = [{"city_name": x["city"], "equity_deal_count": x["count"], "key_events": [{"title": x["top"]}]} for x in payload["cities"]]
+            body = json.dumps(rows, ensure_ascii=False).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
