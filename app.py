@@ -25,7 +25,7 @@ def now_str() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
-def fetch(url: str, timeout: int = 15) -> bytes:
+def fetch(url: str, timeout: int = 8) -> bytes:
     req = Request(url, headers={"User-Agent": "info-grab/1.0"})
     with urlopen(req, timeout=timeout) as resp:
         return resp.read()
@@ -358,21 +358,24 @@ class Handler(BaseHTTPRequestHandler):
 
 def broadcaster() -> None:
     while True:
-        live = collect_live_data()
-        STORE.merge(live)
-        payload = STORE.snapshot()
-        with LOCK:
-            for q in list(SUBSCRIBERS):
-                try:
-                    q.put_nowait(payload)
-                except Exception:
-                    SUBSCRIBERS.remove(q)
+        try:
+            live = collect_live_data()
+            STORE.merge(live)
+            payload = STORE.snapshot()
+            with LOCK:
+                for q in list(SUBSCRIBERS):
+                    try:
+                        q.put_nowait(payload)
+                    except Exception:
+                        SUBSCRIBERS.remove(q)
+        except Exception:
+            # never crash background loop
+            pass
         time.sleep(PUSH_INTERVAL_SEC)
 
 
 if __name__ == "__main__":
-    # initial load
-    STORE.merge(collect_live_data())
+    # non-blocking startup: do not wait for external data before serving UI
     threading.Thread(target=broadcaster, daemon=True).start()
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f"Server running on http://127.0.0.1:{PORT}")
