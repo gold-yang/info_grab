@@ -261,25 +261,96 @@ body{margin:0;font-family:Inter,Arial,"PingFang SC";background:#0b1220;color:#e7
 </div>
 </div>
 <script>
-function t(headers, rows){return '<tr>'+headers.map(h=>`<th>${h}</th>`).join('')+'</tr>'+rows.map(r=>'<tr>'+r.map(c=>`<td>${c??""}</td>`).join('')+'</tr>').join('')}
 function fmt(v){return (v===null||v===undefined)?'--':v}
+
+function ensureTable(el, headers){
+  if(!el.tHead){
+    const thead=el.createTHead();
+    const tr=thead.insertRow();
+    headers.forEach(h=>{const th=document.createElement('th');th.textContent=h;tr.appendChild(th);});
+  }
+  if(!el.tBodies.length){el.appendChild(document.createElement('tbody'));}
+  return el.tBodies[0];
+}
+
+function patchRows(tableEl, headers, rows, keyIndex=1){
+  const tbody=ensureTable(tableEl, headers);
+  const existing=new Map([...tbody.querySelectorAll('tr')].map(tr=>[tr.dataset.key,tr]));
+  const used=new Set();
+  for(const row of rows){
+    const key=String(row[keyIndex] ?? row[0] ?? Math.random());
+    let tr=existing.get(key);
+    if(!tr){tr=document.createElement('tr'); tr.dataset.key=key; tbody.appendChild(tr);} 
+    used.add(key);
+    const cells=row.map(v=>String(v ?? ''));
+    while(tr.children.length<cells.length){tr.appendChild(document.createElement('td'));}
+    while(tr.children.length>cells.length){tr.removeChild(tr.lastChild);}    
+    cells.forEach((c,i)=>{if(tr.children[i].textContent!==c) tr.children[i].textContent=c;});
+  }
+  for(const [k,tr] of existing){ if(!used.has(k)) tr.remove(); }
+}
+
+function patchImportant(items){
+  const root=document.getElementById('important');
+  const existing=new Map([...root.querySelectorAll('[data-key]')].map(n=>[n.dataset.key,n]));
+  const used=new Set();
+  for(const x of (items||[])){
+    const key=x.symbol||x.label;
+    let card=existing.get(key);
+    if(!card){
+      card=document.createElement('div'); card.className='card'; card.dataset.key=key;
+      card.innerHTML="<div class='muted k'></div><div class='big v'></div><div class='muted s'></div>";
+      root.appendChild(card);
+    }
+    used.add(key);
+    card.querySelector('.k').textContent=x.label||key;
+    card.querySelector('.v').textContent=fmt(x.value);
+    const s=card.querySelector('.s');
+    s.textContent=(x.source||'') + (x.stale?' · 使用旧值':'');
+    s.className='muted s' + (x.stale?' stale':'');
+  }
+  for(const [k,n] of existing){ if(!used.has(k)) n.remove(); }
+}
+
+function patchBoard(board){
+  const root=document.getElementById('board');
+  const existing=new Map([...root.querySelectorAll('[data-cat]')].map(n=>[n.dataset.cat,n]));
+  const cats=Object.keys(board||{});
+  for(const c of cats){
+    let card=existing.get(c);
+    if(!card){
+      card=document.createElement('div'); card.className='card'; card.dataset.cat=c;
+      card.innerHTML=`<h3>${c}</h3><table class='table'></table>`;
+      root.appendChild(card);
+    }
+    const rows=(board[c]||[]).map(x=>[x.name,x.symbol,fmt(x.value),fmt(x.change_pct),x.source]);
+    patchRows(card.querySelector('table'), ['name','symbol','value','chg%','source'], rows, 1);
+  }
+}
+
+function patchEvents(events){
+  const root=document.getElementById('events');
+  if(!events || !events.length){if(!root.children.length) root.innerHTML='<div class="muted">暂无</div>'; return;}
+  root.innerHTML='';
+  for(const e of events){
+    const div=document.createElement('div'); div.className='item';
+    div.innerHTML=`<a target='_blank' href='${e.link}'>${e.title}</a><div class='muted'>${e.time} · ${e.source} · ${e.tag}</div>`;
+    root.appendChild(div);
+  }
+}
+
 function render(payload){
-  document.getElementById('meta').textContent = `更新时间: ${payload.ts} | ${payload.note}`;
-  document.getElementById('important').innerHTML = (payload.important||[]).map(x=>`<div class='card'><div class='muted'>${x.label}</div><div class='big'>${fmt(x.value)}</div><div class='muted ${x.stale?'stale':''}'>${x.source}${x.stale?' · 使用旧值':''}</div></div>`).join('');
-  document.getElementById('snapshot').innerHTML = t(['name','symbol','value','chg%','source'], (payload.snapshot||[]).map(x=>[x.name,x.symbol,fmt(x.value),fmt(x.change_pct),x.source]));
-  const b = payload.board || {};
-  const cats = Object.keys(b);
-  document.getElementById('board').innerHTML = cats.map(c=>{
-    const rows=(b[c]||[]).map(x=>[x.name,x.symbol,fmt(x.value),fmt(x.change_pct),x.source]);
-    return `<div class='card'><h3>${c}</h3><table class='table'>${t(['name','symbol','value','chg%','source'], rows)}</table></div>`;
-  }).join('');
-  document.getElementById('events').innerHTML = (payload.events||[]).map(e=>`<div class='item'><a target='_blank' href='${e.link}'>${e.title}</a><div class='muted'>${e.time} · ${e.source} · ${e.tag}</div></div>`).join('') || '<div class="muted">暂无</div>';
-  document.getElementById('cities').innerHTML = t(['city','news_count','top_news'], (payload.cities||[]).map(x=>[x.city,x.count,x.top]));
+  document.getElementById('meta').textContent=`更新时间: ${payload.ts} | ${payload.note}`;
+  patchImportant(payload.important||[]);
+  patchRows(document.getElementById('snapshot'), ['name','symbol','value','chg%','source'], (payload.snapshot||[]).map(x=>[x.name,x.symbol,fmt(x.value),fmt(x.change_pct),x.source]), 1);
+  patchBoard(payload.board||{});
+  patchEvents(payload.events||[]);
+  patchRows(document.getElementById('cities'), ['city','news_count','top_news'], (payload.cities||[]).map(x=>[x.city,x.count,x.top]), 0);
 }
 let es=null;
 function connect(){es=new EventSource('/stream');es.onmessage=(e)=>{try{render(JSON.parse(e.data))}catch(_){}};es.onerror=()=>{try{es.close()}catch(_){};setTimeout(connect,3000);};}
 connect();
-</script></body></html>"""
+</script>"""
 
 
 class Handler(BaseHTTPRequestHandler):
